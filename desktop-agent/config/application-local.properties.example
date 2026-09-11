@@ -1,0 +1,3 @@
+# Bu dosyayı application-local.properties olarak kopyalayın (gitignore'da).
+# job.max-migration-rounds=7
+# job.upgrade-branch-pattern=upgrade/java-{version}

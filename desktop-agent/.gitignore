@@ -1,0 +1,8 @@
+node_modules/
+dist/
+dist-electron/
+release/
+workspaces/*
+!workspaces/.gitkeep
+*.log
+.DS_Store

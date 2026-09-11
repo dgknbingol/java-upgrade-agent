@@ -1,0 +1,45 @@
+{
+  "name": "java-upgrade-desktop-agent",
+  "version": "1.0.0",
+  "description": "Windows desktop agent for Maven Java upgrades via GitHub Copilot CLI",
+  "main": "dist-electron/main.js",
+  "private": true,
+  "scripts": {
+    "dev": "npm run build:electron && concurrently -k \"vite\" \"tsc -p tsconfig.electron.json -w --preserveWatchOutput\" \"wait-on tcp:5174 && cross-env VITE_DEV_SERVER_URL=http://localhost:5174 electron .\"",
+    "build": "npm run build:renderer && npm run build:electron",
+    "prepare:icons": "node scripts/prepare-icons.mjs",
+    "predist": "npm run prepare:icons",
+    "predist:dir": "npm run prepare:icons",
+    "predist:portable": "npm run prepare:icons",
+    "build:renderer": "vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "apply:exe-icon": "node scripts/apply-exe-icon.mjs",
+    "pack:zip": "node scripts/pack-zip.mjs",
+    "dist": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --x64 --config electron-builder.yml && npm run apply:exe-icon",
+    "dist:dir": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --x64 --dir --config electron-builder.yml && npm run apply:exe-icon",
+    "dist:portable": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --x64 --config electron-builder.portable.yml",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@types/uuid": "^10.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^34.2.0",
+    "electron-builder": "^25.1.8",
+    "rcedit": "^4.0.1",
+    "sharp": "^0.35.2",
+    "to-ico": "^1.1.5",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.0",
+    "wait-on": "^8.0.2"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+backend/workspaces/*
+!backend/workspaces/.gitkeep
+backend/config/application-local.properties
+*.log
+.DS_Store

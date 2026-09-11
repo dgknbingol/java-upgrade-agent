@@ -1,0 +1,36 @@
+appId: com.paytion.java-upgrade-desktop-agent
+productName: Paytion Java Upgrade Desktop Agent
+icon: build/icon.png
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+asar: true
+# Windows symlink izni olmadan winCodeSign çıkarımı patlar — POC için imzasız paketle
+forceCodeSigning: false
+win:
+  # electron-builder rcedit winCodeSign gerektirir (symlink hatası); ikon scripts/apply-exe-icon.mjs ile gömülür
+  signAndEditExecutable: false
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Paytion Java Upgrade Agent
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+extraResources:
+  - from: build/icon.png
+    to: icon.png
+  - from: config
+    to: config

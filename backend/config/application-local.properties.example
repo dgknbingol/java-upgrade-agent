@@ -1,0 +1,7 @@
+# Bu dosyayı application-local.properties olarak kopyalayın (git'e eklenmez).
+# Config Server'dan ÖNCE uygulanır; şirkette Config Server bu dosyayı ezer.
+
+# server.port=4001
+# server.cors.origin=http://localhost:5173
+
+# prompt.java-upgrade=Özel migration prompt metni...

@@ -1,0 +1,52 @@
+appId: com.paytion.java-upgrade-desktop-agent
+
+productName: Paytion Java Upgrade Desktop Agent
+
+icon: build/icon.png
+
+directories:
+
+  output: release
+
+  buildResources: build
+
+files:
+
+  - dist/**
+
+  - dist-electron/**
+
+  - package.json
+
+asar: true
+
+forceCodeSigning: false
+
+win:
+
+  signAndEditExecutable: false
+
+  icon: build/icon.ico
+
+  target:
+
+    - target: portable
+
+      arch:
+
+        - x64
+
+portable:
+
+  artifactName: ${productName}-portable-${version}.${ext}
+
+extraResources:
+
+  - from: build/icon.png
+
+    to: icon.png
+
+  - from: config
+
+    to: config
+
