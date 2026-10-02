@@ -1,3 +1,7 @@
+import http from 'node:http';
+import https from 'node:https';
+import { URL } from 'node:url';
+
 export type SecurityScanKind = 'mend' | 'fortify';
 
 export const FORTIFY_SCAN_TYPE = 'Static Code Analysis';
@@ -112,23 +116,95 @@ export function buildSecurityJql(
   );
 }
 
+function formatNetworkError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const cause = (err as Error & { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    const code =
+      typeof (cause as NodeJS.ErrnoException).code === 'string'
+        ? (cause as NodeJS.ErrnoException).code
+        : undefined;
+    return code ? `${err.message}: ${cause.message} (${code})` : `${err.message}: ${cause.message}`;
+  }
+  return err.message;
+}
+
+/**
+ * Corporate Jira hosts (e.g. *.vodafone.local) often use an internal CA that
+ * Node's built-in trust store does not include — browsers do, so the same URL
+ * works in Chrome but native fetch() fails with "fetch failed".
+ */
+function shouldRelaxTls(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host.endsWith('.local') || host === 'localhost' || host.endsWith('.internal');
+}
+
 async function jiraFetch(
   baseUrl: string,
   token: string,
   apiPath: string,
-  init?: RequestInit
+  init?: { method?: string; body?: string; headers?: Record<string, string> }
 ): Promise<Response> {
-  const url = `${normalizeBaseUrl(baseUrl)}${apiPath}`;
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token.trim()}`,
-      ...(init?.headers || {}),
-    },
-  });
-  return response;
+  const url = new URL(`${normalizeBaseUrl(baseUrl)}${apiPath}`);
+  const isHttps = url.protocol === 'https:';
+  const transport = isHttps ? https : http;
+  const method = (init?.method || 'GET').toUpperCase();
+  const body = init?.body;
+
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token.trim()}`,
+    ...(init?.headers || {}),
+  };
+  if (body != null) {
+    headers['Content-Length'] = Buffer.byteLength(body).toString();
+  }
+
+  try {
+    return await new Promise<Response>((resolve, reject) => {
+      const req = transport.request(
+        {
+          protocol: url.protocol,
+          hostname: url.hostname,
+          port: url.port || (isHttps ? 443 : 80),
+          path: `${url.pathname}${url.search}`,
+          method,
+          headers,
+          // Internal Jira CA is trusted by Windows/browser, not by Node.
+          rejectUnauthorized: !(isHttps && shouldRelaxTls(url.hostname)),
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => {
+            const buf = Buffer.concat(chunks);
+            const responseHeaders = new Headers();
+            for (const [key, value] of Object.entries(res.headers)) {
+              if (value == null) continue;
+              if (Array.isArray(value)) {
+                for (const item of value) responseHeaders.append(key, item);
+              } else {
+                responseHeaders.set(key, value);
+              }
+            }
+            resolve(
+              new Response(buf, {
+                status: res.statusCode || 0,
+                statusText: res.statusMessage || '',
+                headers: responseHeaders,
+              })
+            );
+          });
+        }
+      );
+      req.on('error', reject);
+      if (body != null) req.write(body);
+      req.end();
+    });
+  } catch (err) {
+    throw new Error(`Jira bağlantısı başarısız (${url.origin}): ${formatNetworkError(err)}`);
+  }
 }
 
 async function loadFieldMap(
