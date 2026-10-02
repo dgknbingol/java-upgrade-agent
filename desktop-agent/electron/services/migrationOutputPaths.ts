@@ -14,6 +14,11 @@ export const MIGRATION_FILE_NAMES = {
   buildFixTask: 'BUILD_FIX_TASK.md',
   /** Run App / startup fail → Copilot runtime fix */
   runtimeFixTask: 'RUNTIME_FIX_TASK.md',
+  /** Mend & Fortify security remediation */
+  securityFixTask: 'SECURITY_FIX_TASK.md',
+  securityReport: 'SECURITY_REMEDIATION_REPORT.md',
+  mendFindings: 'MEND_FINDINGS.md',
+  fortifyFindings: 'FORTIFY_FINDINGS.md',
   runAppLog: 'RUN_APP_LOG.txt',
 } as const;
 

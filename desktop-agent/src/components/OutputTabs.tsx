@@ -7,6 +7,8 @@ interface OutputTabsProps {
   report: string;
   diff: string;
   logs: string[];
+  mendFindings: string;
+  fortifyFindings: string;
   status: string;
   upgradeBranch: string;
   onExpandChange?: (expanded: boolean) => void;
@@ -16,6 +18,8 @@ export function OutputTabs({
   report,
   diff,
   logs,
+  mendFindings,
+  fortifyFindings,
   status,
   upgradeBranch,
   onExpandChange,
@@ -58,6 +62,8 @@ export function OutputTabs({
 
   const tabs: { id: OutputTabId; label: string }[] = [
     { id: 'logs', label: 'Live Logs' },
+    { id: 'mend', label: 'Mend' },
+    { id: 'fortify', label: 'Fortify' },
     { id: 'report', label: 'Migration Report' },
     { id: 'summary', label: 'Visual Diff Summary' },
     { id: 'diff', label: 'Raw Diff' },
@@ -72,7 +78,13 @@ export function OutputTabs({
     'rolling-back',
   ].includes(status);
 
-  const tabContent = getOutputTabContent(tab, { logs, report, diff });
+  const tabContent = getOutputTabContent(tab, {
+    logs,
+    report,
+    diff,
+    mendFindings,
+    fortifyFindings,
+  });
 
   function handleExpandToggle() {
     const next = !expanded;
@@ -91,6 +103,22 @@ export function OutputTabs({
           >
             {logs.length ? logs.join('\n') : 'Henüz log yok.'}
           </pre>
+        );
+      case 'mend':
+        return mendFindings.trim() ? (
+          <pre className="artifact-view output-tab-scroll">{mendFindings}</pre>
+        ) : (
+          <p className="output-empty">
+            Mend bulgusu yok. Mend checkbox&apos;ını işaretleyip Analyze çalıştırın.
+          </p>
+        );
+      case 'fortify':
+        return fortifyFindings.trim() ? (
+          <pre className="artifact-view output-tab-scroll">{fortifyFindings}</pre>
+        ) : (
+          <p className="output-empty">
+            Fortify bulgusu yok. Fortify checkbox&apos;ını işaretleyip Analyze çalıştırın.
+          </p>
         );
       case 'report':
         return report ? (

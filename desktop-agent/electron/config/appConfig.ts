@@ -17,7 +17,12 @@ export interface PipelineSettings {
   startupPostSuccessSeconds: number;
 }
 
-export interface AppConfig extends PipelineSettings {
+export interface JiraSettings {
+  jiraBaseUrl: string;
+  jiraToken: string;
+}
+
+export interface AppConfig extends PipelineSettings, JiraSettings {
   upgradeBranchPattern: string;
   copilotCommand: string;
   copilotIdleHeartbeatSeconds: number;
@@ -148,6 +153,12 @@ function buildConfig(loadResult: ConfigLoadResult): AppConfig {
     copilotCommand: getString(properties, 'copilot.command', 'copilot'),
     copilotIdleHeartbeatSeconds: getInt(properties, 'copilot.idle-heartbeat-seconds', 20),
     copilotModel: getString(properties, 'copilot.model', 'auto'),
+    jiraBaseUrl: getString(
+      properties,
+      'jira.base-url',
+      'https://itjira.vodafone.local'
+    ),
+    jiraToken: getString(properties, 'jira.token', ''),
     configSources: sources,
     renderTemplate,
   };
@@ -169,6 +180,8 @@ export function getAppConfig(): AppConfig {
 export function getPublicAppConfig(): PipelineSettings & {
   upgradeBranchPattern: string;
   copilotModel: string;
+  jiraBaseUrl: string;
+  jiraToken: string;
 } {
   const config = getAppConfig();
   return {
@@ -183,6 +196,8 @@ export function getPublicAppConfig(): PipelineSettings & {
     startupPostSuccessSeconds: config.startupPostSuccessSeconds,
     upgradeBranchPattern: config.upgradeBranchPattern,
     copilotModel: config.copilotModel,
+    jiraBaseUrl: config.jiraBaseUrl,
+    jiraToken: config.jiraToken,
   };
 }
 
@@ -209,6 +224,8 @@ function persistUserLocalConfig(updates: Record<string, string>): void {
     `job.startup-run-mode=${merged['job.startup-run-mode'] ?? config.startupRunMode}`,
     `job.startup-post-success-seconds=${merged['job.startup-post-success-seconds'] ?? String(config.startupPostSuccessSeconds)}`,
     `copilot.model=${merged['copilot.model'] ?? config.copilotModel ?? 'auto'}`,
+    `jira.base-url=${merged['jira.base-url'] ?? config.jiraBaseUrl}`,
+    `jira.token=${merged['jira.token'] ?? config.jiraToken}`,
     '',
   ].join('\n');
 
@@ -237,4 +254,19 @@ export function savePipelineSettings(input: Partial<PipelineSettings>): Pipeline
     'job.startup-post-success-seconds': String(normalized.startupPostSuccessSeconds),
   });
   return normalizePipelineSettings(normalized);
+}
+
+export function saveJiraSettings(input: Partial<JiraSettings>): JiraSettings {
+  const current = getAppConfig();
+  const jiraBaseUrl = (input.jiraBaseUrl ?? current.jiraBaseUrl).trim().replace(/\/+$/, '');
+  const jiraToken = (input.jiraToken ?? current.jiraToken).trim();
+  persistUserLocalConfig({
+    'jira.base-url': jiraBaseUrl || 'https://itjira.vodafone.local',
+    'jira.token': jiraToken,
+  });
+  const updated = getAppConfig();
+  return {
+    jiraBaseUrl: updated.jiraBaseUrl,
+    jiraToken: updated.jiraToken,
+  };
 }

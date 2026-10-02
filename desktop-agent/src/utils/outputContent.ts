@@ -1,6 +1,6 @@
 import { formatDiffSummaryText } from './diffParser';
 
-export type OutputTabId = 'logs' | 'report' | 'summary' | 'diff';
+export type OutputTabId = 'logs' | 'mend' | 'fortify' | 'report' | 'summary' | 'diff';
 
 export interface OutputTabContent {
   content: string;
@@ -20,7 +20,13 @@ function isPlaceholderDiff(diff: string): boolean {
 
 export function getOutputTabContent(
   tab: OutputTabId,
-  data: { logs: string[]; report: string; diff: string }
+  data: {
+    logs: string[];
+    report: string;
+    diff: string;
+    mendFindings: string;
+    fortifyFindings: string;
+  }
 ): OutputTabContent {
   switch (tab) {
     case 'logs': {
@@ -30,6 +36,24 @@ export function getOutputTabContent(
         defaultFilename: 'upgrade-logs.log',
         saveTitle: 'Log dosyasını kaydet',
         isEmpty: !content.trim(),
+      };
+    }
+    case 'mend': {
+      const content = data.mendFindings.trim();
+      return {
+        content,
+        defaultFilename: '.java-upgrade/MEND_FINDINGS.md',
+        saveTitle: 'Mend bulgularını kaydet',
+        isEmpty: !content,
+      };
+    }
+    case 'fortify': {
+      const content = data.fortifyFindings.trim();
+      return {
+        content,
+        defaultFilename: '.java-upgrade/FORTIFY_FINDINGS.md',
+        saveTitle: 'Fortify bulgularını kaydet',
+        isEmpty: !content,
       };
     }
     case 'report': {

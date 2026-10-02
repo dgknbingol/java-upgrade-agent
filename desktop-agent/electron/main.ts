@@ -6,7 +6,15 @@ import {
   type OpenDialogOptions,
   type SaveDialogOptions,
 } from 'electron';
-import { getPublicAppConfig, initAppConfig, saveCopilotModel, savePipelineSettings, type PipelineSettings } from './config/appConfig';
+import {
+  getPublicAppConfig,
+  initAppConfig,
+  saveCopilotModel,
+  saveJiraSettings,
+  savePipelineSettings,
+  type JiraSettings,
+  type PipelineSettings,
+} from './config/appConfig';
 import fs from 'fs';
 import path from 'path';
 import { checkHealth } from './services/healthService';
@@ -23,6 +31,7 @@ import {
   runBuildJob,
   runStartupAgain,
   runStartupJob,
+  startSecurityRemediation,
   startUpgrade,
   stopJob,
 } from './jobRunner';
@@ -158,12 +167,20 @@ function registerIpc(): void {
 
   ipcMain.handle('app:saveCopilotModel', async (_event, model: string) => saveCopilotModel(model));
 
+  ipcMain.handle('app:saveJiraConfig', async (_event, input: Partial<JiraSettings>) =>
+    saveJiraSettings(input)
+  );
+
   ipcMain.handle('job:analyze', async (_event, input) => {
     return analyzeRepository(input, sendLog);
   });
 
   ipcMain.handle('job:start', async (_event, input) => {
     return startUpgrade(input, sendLog, sendStatus);
+  });
+
+  ipcMain.handle('job:startSecurityFix', async (_event, input) => {
+    return startSecurityRemediation(input, sendLog, sendStatus);
   });
 
   ipcMain.handle('job:runBuild', async (_event, jobId: string, options?: { skipTests?: boolean }) => {

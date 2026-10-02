@@ -29,6 +29,11 @@ export interface AnalyzeResult {
   springBootVersion: string;
   buildTool: string;
   displayVersion: string;
+  repoName?: string;
+  mendFindingsText?: string;
+  fortifyFindingsText?: string;
+  mendCount?: number;
+  fortifyCount?: number;
 }
 
 export interface JobRecord {
@@ -46,5 +51,7 @@ export interface JobRecord {
   logs: string[];
   report: string;
   diff: string;
+  mendFindingsText?: string;
+  fortifyFindingsText?: string;
   error?: string;
 }

@@ -1,6 +1,7 @@
 interface ActionButtonsProps {
   loading: boolean;
   canAnalyze: boolean;
+  canSecurityFix: boolean;
   canStart: boolean;
   canStop: boolean;
   canBuild: boolean;
@@ -8,6 +9,7 @@ interface ActionButtonsProps {
   canPush: boolean;
   canRollback: boolean;
   onAnalyze: () => void;
+  onSecurityFix: () => void;
   onStart: () => void;
   onStop: () => void;
   onRunBuild: () => void;
@@ -19,6 +21,7 @@ interface ActionButtonsProps {
 export function ActionButtons({
   loading,
   canAnalyze,
+  canSecurityFix,
   canStart,
   canStop,
   canBuild,
@@ -26,6 +29,7 @@ export function ActionButtons({
   canPush,
   canRollback,
   onAnalyze,
+  onSecurityFix,
   onStart,
   onStop,
   onRunBuild,
@@ -37,6 +41,14 @@ export function ActionButtons({
     <div className="action-row">
       <button type="button" className="btn btn-secondary" onClick={onAnalyze} disabled={loading || !canAnalyze}>
         Analyze
+      </button>
+      <button
+        type="button"
+        className="btn btn-primary"
+        onClick={onSecurityFix}
+        disabled={loading || !canSecurityFix}
+      >
+        Mend & Fortify Fix
       </button>
       <button type="button" className="btn btn-primary" onClick={onStart} disabled={loading || !canStart}>
         Start Upgrade

@@ -51,6 +51,14 @@ export interface JobRunInput {
 
   copilotModel?: string;
 
+  includeMend?: boolean;
+
+  includeFortify?: boolean;
+
+  jiraBaseUrl?: string;
+
+  jiraToken?: string;
+
 }
 
 
@@ -89,6 +97,10 @@ export function useJob() {
   const [report, setReport] = useState('');
 
   const [diff, setDiff] = useState('');
+
+  const [mendFindings, setMendFindings] = useState('');
+
+  const [fortifyFindings, setFortifyFindings] = useState('');
 
   const [error, setError] = useState('');
 
@@ -335,6 +347,10 @@ export function useJob() {
       sourceBranch: string;
       workspaceRoot?: string;
       targetJavaVersion?: string;
+      includeMend?: boolean;
+      includeFortify?: boolean;
+      jiraBaseUrl?: string;
+      jiraToken?: string;
     }): Promise<AnalyzeResult> => {
 
       setError('');
@@ -345,7 +361,7 @@ export function useJob() {
 
       try {
 
-        return await window.electronAPI.analyze({
+        const result = await window.electronAPI.analyze({
 
           sourceMode: input.sourceMode,
 
@@ -356,7 +372,16 @@ export function useJob() {
           sourceBranch: input.sourceBranch,
           workspaceRoot: input.workspaceRoot?.trim() || undefined,
           targetJavaVersion: input.targetJavaVersion?.trim() || undefined,
+          includeMend: input.includeMend === true,
+          includeFortify: input.includeFortify === true,
+          jiraBaseUrl: input.jiraBaseUrl?.trim() || undefined,
+          jiraToken: input.jiraToken?.trim() || undefined,
         });
+
+        setMendFindings(input.includeMend ? result.mendFindingsText || '' : '');
+        setFortifyFindings(input.includeFortify ? result.fortifyFindingsText || '' : '');
+
+        return result;
 
       } catch (err) {
 
@@ -375,6 +400,141 @@ export function useJob() {
     },
 
     []
+
+  );
+
+
+
+  const startSecurityFix = useCallback(
+
+    async (input: JobRunInput): Promise<JobRecord> => {
+
+      setError('');
+
+      setLoading(true);
+
+      setLogs([]);
+
+      setReport('');
+
+      setDiff('');
+
+      setStatus('cloning');
+
+      try {
+
+        const job = await window.electronAPI.startSecurityFix({
+
+          sourceMode: input.sourceMode,
+
+          repoUrl: input.repoUrl?.trim() || undefined,
+
+          localRepoPath: input.localRepoPath?.trim() || undefined,
+
+          sourceBranch: input.sourceBranch,
+
+          targetJavaVersion: input.targetJavaVersion,
+
+          sourceJavaVersion: input.sourceJavaVersion,
+
+          workspaceRoot: input.workspaceRoot?.trim() || undefined,
+
+          useNewBranch: input.useNewBranch,
+
+          workBranchName: input.workBranchName?.trim() || undefined,
+
+          maxMigrationRounds: input.maxMigrationRounds,
+
+          maxBuildFixAttempts: input.maxBuildFixAttempts,
+
+          mavenBuildLogTailChars: input.mavenBuildLogTailChars,
+
+          smokeRunEnabled: input.smokeRunEnabled,
+
+          smokeRunTimeoutSeconds: input.smokeRunTimeoutSeconds,
+
+          smokeRunProfile: input.smokeRunProfile,
+
+          maxSmokeFixAttempts: input.maxSmokeFixAttempts,
+
+          startupRunMode: input.startupRunMode,
+
+          startupPostSuccessSeconds: input.startupPostSuccessSeconds,
+
+          useLocalPropertiesOverride: input.useLocalPropertiesOverride,
+
+          localPropertiesFilePath: input.localPropertiesFilePath?.trim() || undefined,
+
+          copilotModel: input.copilotModel?.trim() || undefined,
+
+          includeMend: input.includeMend === true,
+
+          includeFortify: input.includeFortify === true,
+
+          jiraBaseUrl: input.jiraBaseUrl?.trim() || undefined,
+
+          jiraToken: input.jiraToken?.trim() || undefined,
+
+        });
+
+        setJobId(job.id);
+
+        setUpgradeBranch(job.upgradeBranch);
+
+        if (job.report) {
+
+          setReport(job.report);
+
+        }
+
+        setDiff(
+
+          job.diff.trim()
+
+            ? job.diff
+
+            : 'Kaynak branch ile karşılaştırıldığında dosya değişikliği yok.'
+
+        );
+
+        setStatus(job.status);
+
+        if (input.includeMend) {
+          setMendFindings(job.mendFindingsText || '');
+        }
+        if (input.includeFortify) {
+          setFortifyFindings(job.fortifyFindingsText || '');
+        }
+
+        return job;
+
+      } catch (err) {
+
+        const msg = err instanceof Error ? err.message : 'Mend & Fortify Fix başarısız';
+
+        setError(msg);
+
+        const activeId = await window.electronAPI.getActiveJobId();
+
+        if (activeId) {
+
+          setJobId(activeId);
+
+          await refreshArtifacts(activeId);
+
+        }
+
+        throw err;
+
+      } finally {
+
+        setLoading(false);
+
+      }
+
+    },
+
+    [refreshArtifacts]
 
   );
 
@@ -904,11 +1064,17 @@ export function useJob() {
 
     diff,
 
+    mendFindings,
+
+    fortifyFindings,
+
     error,
 
     loading,
 
     analyze,
+
+    startSecurityFix,
 
     startUpgrade,
 

@@ -18,12 +18,13 @@ export interface CopilotRunOptions {
   model?: string;
 }
 
-export type CopilotTaskKind = 'migration' | 'build-fix' | 'runtime-fix';
+export type CopilotTaskKind = 'migration' | 'build-fix' | 'runtime-fix' | 'security-fix';
 
 const TASK_FILE_BY_KIND: Record<CopilotTaskKind, string> = {
   migration: MIGRATION_FILE_NAMES.promptTask,
   'build-fix': MIGRATION_FILE_NAMES.buildFixTask,
   'runtime-fix': MIGRATION_FILE_NAMES.runtimeFixTask,
+  'security-fix': MIGRATION_FILE_NAMES.securityFixTask,
 };
 
 export function writeTaskFile(
@@ -55,6 +56,15 @@ function buildShortCliPrompt(taskRelPath: string, taskKind: CopilotTaskKind): st
     return [
       `Open ${taskRelPath}. It contains an application startup failure log.`,
       'Fix that error by editing the project now. Do not only explain. Do not ask questions.',
+    ].join(' ');
+  }
+
+  if (taskKind === 'security-fix') {
+    return [
+      `Open ${taskRelPath}. It contains Mend/Fortify Jira security findings and remediation instructions.`,
+      'Respect the ACTIVE SCOPE checkboxes in that file.',
+      'Remediate only in-scope vulnerabilities by editing the project now.',
+      'Write SECURITY_REMEDIATION_REPORT.md. Do not only explain. Do not ask questions.',
     ].join(' ');
   }
 
