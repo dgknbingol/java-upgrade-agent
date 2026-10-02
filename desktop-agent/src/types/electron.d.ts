@@ -33,12 +33,19 @@ export interface PipelineSettingsInput {
 export interface AppPublicConfig extends PipelineSettingsInput {
   upgradeBranchPattern: string;
   copilotModel: string;
+  jiraBaseUrl: string;
+  jiraToken: string;
 }
 
 export interface CopilotModelOptions {
   models: string[];
   selectedModel: string;
   cliPersistedModel: string | null;
+}
+
+export interface JiraSettingsInput {
+  jiraBaseUrl: string;
+  jiraToken: string;
 }
 
 export interface ElectronAPI {
@@ -59,6 +66,7 @@ export interface ElectronAPI {
   checkHealth: (targetJavaVersion?: string) => Promise<HealthToolStatus[]>;
   listCopilotModels: () => Promise<CopilotModelOptions>;
   saveCopilotModel: (model: string) => Promise<string>;
+  saveJiraConfig: (input: Partial<JiraSettingsInput>) => Promise<JiraSettingsInput>;
   analyze: (input: {
     sourceMode?: SourceMode;
     repoUrl?: string;
@@ -66,6 +74,10 @@ export interface ElectronAPI {
     sourceBranch: string;
     workspaceRoot?: string;
     targetJavaVersion?: string;
+    includeMend?: boolean;
+    includeFortify?: boolean;
+    jiraBaseUrl?: string;
+    jiraToken?: string;
   }) => Promise<AnalyzeResult>;
   startUpgrade: (input: {
     sourceMode?: SourceMode;
@@ -90,6 +102,34 @@ export interface ElectronAPI {
     useLocalPropertiesOverride?: boolean;
     localPropertiesFilePath?: string;
     copilotModel?: string;
+  }) => Promise<JobRecord>;
+  startSecurityFix: (input: {
+    sourceMode?: SourceMode;
+    repoUrl?: string;
+    localRepoPath?: string;
+    sourceBranch: string;
+    targetJavaVersion: string;
+    sourceJavaVersion?: string;
+    workspaceRoot?: string;
+    useNewBranch?: boolean;
+    workBranchName?: string;
+    upgradeBranchName?: string;
+    maxMigrationRounds?: number;
+    maxBuildFixAttempts?: number;
+    mavenBuildLogTailChars?: number;
+    smokeRunEnabled?: boolean;
+    smokeRunTimeoutSeconds?: number;
+    smokeRunProfile?: string;
+    maxSmokeFixAttempts?: number;
+    startupRunMode?: StartupRunMode;
+    startupPostSuccessSeconds?: number;
+    useLocalPropertiesOverride?: boolean;
+    localPropertiesFilePath?: string;
+    copilotModel?: string;
+    includeMend?: boolean;
+    includeFortify?: boolean;
+    jiraBaseUrl?: string;
+    jiraToken?: string;
   }) => Promise<JobRecord>;
   runBuild: (jobId: string, options?: { skipTests?: boolean }) => Promise<JobRecord>;
   runBuildJob: (input: {

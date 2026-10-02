@@ -39,12 +39,19 @@ export interface PipelineSettingsInput {
 export interface AppPublicConfig extends PipelineSettingsInput {
   upgradeBranchPattern: string;
   copilotModel: string;
+  jiraBaseUrl: string;
+  jiraToken: string;
 }
 
 export interface CopilotModelOptions {
   models: string[];
   selectedModel: string;
   cliPersistedModel: string | null;
+}
+
+export interface JiraSettingsInput {
+  jiraBaseUrl: string;
+  jiraToken: string;
 }
 
 const electronAPI = {
@@ -77,11 +84,17 @@ const electronAPI = {
   saveCopilotModel: (model: string): Promise<string> =>
     ipcRenderer.invoke('app:saveCopilotModel', model),
 
+  saveJiraConfig: (input: Partial<JiraSettingsInput>): Promise<JiraSettingsInput> =>
+    ipcRenderer.invoke('app:saveJiraConfig', input),
+
   analyze: (input: AnalyzeInput): Promise<AnalyzeResult> =>
     ipcRenderer.invoke('job:analyze', input),
 
   startUpgrade: (input: StartUpgradeInput): Promise<JobRecord> =>
     ipcRenderer.invoke('job:start', input),
+
+  startSecurityFix: (input: StartUpgradeInput): Promise<JobRecord> =>
+    ipcRenderer.invoke('job:startSecurityFix', input),
 
   runBuild: (jobId: string, options?: { skipTests?: boolean }): Promise<JobRecord> =>
     ipcRenderer.invoke('job:runBuild', jobId, options),

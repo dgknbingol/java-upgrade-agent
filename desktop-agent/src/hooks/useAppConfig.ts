@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AppPublicConfig, CopilotModelOptions, PipelineSettingsInput } from '../types/electron';
+import type {
+  AppPublicConfig,
+  CopilotModelOptions,
+  JiraSettingsInput,
+  PipelineSettingsInput,
+} from '../types/electron';
 
 const DEFAULT_CONFIG: AppPublicConfig = {
   maxBuildFixAttempts: 2,
@@ -13,6 +18,8 @@ const DEFAULT_CONFIG: AppPublicConfig = {
   startupPostSuccessSeconds: 15,
   upgradeBranchPattern: 'feature/java-{version}-upgrade',
   copilotModel: 'auto',
+  jiraBaseUrl: 'https://itjira.vodafone.local',
+  jiraToken: '',
 };
 
 export function useAppConfig() {
@@ -53,9 +60,27 @@ export function useAppConfig() {
     return saved;
   }, []);
 
+  const saveJiraSettings = useCallback(async (input: JiraSettingsInput) => {
+    const saved = await window.electronAPI.saveJiraConfig(input);
+    setConfig((prev) => ({
+      ...prev,
+      jiraBaseUrl: saved.jiraBaseUrl,
+      jiraToken: saved.jiraToken,
+    }));
+    return saved;
+  }, []);
+
   const listCopilotModels = useCallback(async (): Promise<CopilotModelOptions> => {
     return window.electronAPI.listCopilotModels();
   }, []);
 
-  return { config, loading, reload, savePipelineSettings, saveCopilotModel, listCopilotModels };
+  return {
+    config,
+    loading,
+    reload,
+    savePipelineSettings,
+    saveCopilotModel,
+    saveJiraSettings,
+    listCopilotModels,
+  };
 }

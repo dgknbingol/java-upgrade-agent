@@ -5,3 +5,4 @@ backend/workspaces/*
 backend/config/application-local.properties
 *.log
 .DS_Store
+*.exe

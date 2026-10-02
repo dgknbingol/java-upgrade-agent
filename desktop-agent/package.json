@@ -1,6 +1,6 @@
 {
   "name": "java-upgrade-desktop-agent",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Windows desktop agent for Maven Java upgrades via GitHub Copilot CLI",
   "main": "dist-electron/main.js",
   "private": true,

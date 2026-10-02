@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { buildMavenFixPrompt, buildSmokeFixPrompt } from './prompts/javaUpgradePrompt';
+import { buildSecurityRemediationPrompt } from './prompts/securityRemediationPrompt';
 import {
   MIGRATION_PHASES,
   buildMigrationContinuationPrompt,
@@ -49,7 +50,13 @@ import {
   MIGRATION_FILE_NAMES,
   migrationOutputRelPath,
   resolveMigrationFilePath,
+  resolveExistingMigrationFilePath,
 } from './services/migrationOutputPaths';
+import { deriveRepoName } from './services/repoIdentity';
+import {
+  fetchSecurityFindings,
+  type SecurityFindingsResult,
+} from './services/jiraSecurityService';
 
 export type JobStatus =
   | 'idle'
@@ -86,6 +93,8 @@ export interface JobRecord {
   logs: string[];
   report: string;
   diff: string;
+  mendFindingsText?: string;
+  fortifyFindingsText?: string;
   error?: string;
 }
 
@@ -96,6 +105,10 @@ export interface AnalyzeInput {
   sourceBranch: string;
   workspaceRoot?: string;
   targetJavaVersion?: string;
+  includeMend?: boolean;
+  includeFortify?: boolean;
+  jiraBaseUrl?: string;
+  jiraToken?: string;
 }
 
 export interface AnalyzeResult {
@@ -106,6 +119,11 @@ export interface AnalyzeResult {
   springBootVersion: string;
   buildTool: string;
   displayVersion: string;
+  repoName?: string;
+  mendFindingsText?: string;
+  fortifyFindingsText?: string;
+  mendCount?: number;
+  fortifyCount?: number;
 }
 
 export interface StartUpgradeInput {
@@ -133,6 +151,10 @@ export interface StartUpgradeInput {
   useLocalPropertiesOverride?: boolean;
   localPropertiesFilePath?: string;
   skipTests?: boolean;
+  includeMend?: boolean;
+  includeFortify?: boolean;
+  jiraBaseUrl?: string;
+  jiraToken?: string;
 }
 
 const RUNNING_STATUSES: JobStatus[] = [
@@ -358,6 +380,122 @@ function resolveCloneSource(input: {
   return { sourceMode, cloneSource: repoUrl };
 }
 
+function resolveJiraCredentials(input: {
+  jiraBaseUrl?: string;
+  jiraToken?: string;
+}): { jiraBaseUrl: string; jiraToken: string } {
+  const config = getAppConfig();
+  return {
+    jiraBaseUrl: (input.jiraBaseUrl || config.jiraBaseUrl || '').trim().replace(/\/+$/, ''),
+    jiraToken: (input.jiraToken || config.jiraToken || '').trim(),
+  };
+}
+
+async function maybeFetchSecurityFindings(
+  input: {
+    sourceMode?: SourceMode;
+    repoUrl?: string;
+    localRepoPath?: string;
+    includeMend?: boolean;
+    includeFortify?: boolean;
+    jiraBaseUrl?: string;
+    jiraToken?: string;
+  },
+  onLog?: LogCallback
+): Promise<SecurityFindingsResult | null> {
+  const includeMend = input.includeMend === true;
+  const includeFortify = input.includeFortify === true;
+  if (!includeMend && !includeFortify) {
+    onLog?.('Mend & Fortify: checkbox seçili değil — Jira sorgusu atlandı.');
+    return null;
+  }
+
+  const { jiraBaseUrl, jiraToken } = resolveJiraCredentials(input);
+  if (!jiraToken) {
+    throw new Error(
+      'Mend/Fortify için Jira personal token gerekli. Sol panelde token girin.'
+    );
+  }
+  if (!jiraBaseUrl) {
+    throw new Error('Jira base URL gerekli.');
+  }
+
+  const repoName = deriveRepoName(input);
+  onLog?.(
+    `Mend & Fortify: Jira sorgusu başlıyor (repo=${repoName}, mend=${includeMend}, fortify=${includeFortify})...`
+  );
+
+  const findings = await fetchSecurityFindings({
+    jiraBaseUrl,
+    jiraToken,
+    repoName,
+    includeMend,
+    includeFortify,
+  });
+
+  if (includeMend) {
+    onLog?.(`Mend bulguları: ${findings.mend.length} (JQL: ${findings.mendJql})`);
+  }
+  if (includeFortify) {
+    onLog?.(`Fortify bulguları: ${findings.fortify.length} (JQL: ${findings.fortifyJql})`);
+  }
+
+  return findings;
+}
+
+function writeSecurityFindingArtifacts(
+  workspacePath: string,
+  findings: SecurityFindingsResult
+): void {
+  ensureMigrationOutputDir(workspacePath);
+  fs.writeFileSync(
+    resolveMigrationFilePath(workspacePath, MIGRATION_FILE_NAMES.mendFindings),
+    findings.mendText,
+    'utf-8'
+  );
+  fs.writeFileSync(
+    resolveMigrationFilePath(workspacePath, MIGRATION_FILE_NAMES.fortifyFindings),
+    findings.fortifyText,
+    'utf-8'
+  );
+}
+
+function readSecurityRemediationReport(workspacePath: string): string {
+  const preferred = resolveExistingMigrationFilePath(
+    workspacePath,
+    MIGRATION_FILE_NAMES.securityReport
+  );
+  if (preferred) {
+    return fs.readFileSync(preferred, 'utf-8');
+  }
+  const root = path.join(workspacePath, MIGRATION_FILE_NAMES.securityReport);
+  if (fs.existsSync(root)) {
+    return fs.readFileSync(root, 'utf-8');
+  }
+  return '';
+}
+
+function toAnalyzeResultFromPom(
+  pom: ReturnType<typeof analyzePom>,
+  mavenVersion: string,
+  security: SecurityFindingsResult | null
+): AnalyzeResult {
+  return {
+    javaVersion: pom.javaVersion,
+    javaSource: pom.javaSource,
+    mavenVersion,
+    mavenCompilerVersion: pom.mavenCompilerVersion,
+    springBootVersion: pom.springBootVersion,
+    buildTool: pom.buildTool,
+    displayVersion: pom.javaVersion === 'unknown' ? '?' : `Java ${pom.javaVersion}`,
+    repoName: security?.repoName || '',
+    mendFindingsText: security?.mendText || '',
+    fortifyFindingsText: security?.fortifyText || '',
+    mendCount: security?.mend.length || 0,
+    fortifyCount: security?.fortify.length || 0,
+  };
+}
+
 export async function analyzeRepository(
   input: AnalyzeInput,
   onLog?: LogCallback
@@ -369,25 +507,53 @@ export async function analyzeRepository(
 
   if (sourceMode === 'local') {
     return timedStep(log, 'Analyze', async () => {
-    onLog?.(`Yerel repo analiz ediliyor: ${cloneSource}`);
-    await checkoutBranch(cloneSource, input.sourceBranch, onLog);
+      onLog?.(`Yerel repo analiz ediliyor: ${cloneSource}`);
+      await checkoutBranch(cloneSource, input.sourceBranch, onLog);
 
-    const pom = analyzePom(cloneSource);
-    const mavenVersion = await getMavenVersion(onLog);
+      const pom = analyzePom(cloneSource);
+      const mavenVersion = await getMavenVersion(onLog);
 
-    onLog?.(`Java sürümü: ${pom.javaVersion} (${pom.javaSource})`);
-    onLog?.(`Maven: ${mavenVersion}`);
-    onLog?.(`Spring Boot parent: ${pom.springBootVersion}`);
+      onLog?.(`Java sürümü: ${pom.javaVersion} (${pom.javaSource})`);
+      onLog?.(`Maven: ${mavenVersion}`);
+      onLog?.(`Spring Boot parent: ${pom.springBootVersion}`);
 
-    return {
-      javaVersion: pom.javaVersion,
-      javaSource: pom.javaSource,
-      mavenVersion,
-      mavenCompilerVersion: pom.mavenCompilerVersion,
-      springBootVersion: pom.springBootVersion,
-      buildTool: pom.buildTool,
-      displayVersion: pom.javaVersion === 'unknown' ? '?' : `Java ${pom.javaVersion}`,
-    };
+      let security: SecurityFindingsResult | null = null;
+      try {
+        security = await maybeFetchSecurityFindings(
+          {
+            sourceMode,
+            repoUrl: input.repoUrl,
+            localRepoPath: cloneSource,
+            includeMend: input.includeMend,
+            includeFortify: input.includeFortify,
+            jiraBaseUrl: input.jiraBaseUrl,
+            jiraToken: input.jiraToken,
+          },
+          onLog
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        onLog?.(`Mend & Fortify Jira hatası: ${msg}`);
+        security = {
+          repoName: deriveRepoName({
+            sourceMode,
+            repoUrl: input.repoUrl,
+            localRepoPath: cloneSource,
+          }),
+          mend: [],
+          fortify: [],
+          mendJql: null,
+          fortifyJql: null,
+          mendText: input.includeMend
+            ? `# Mend Findings\n\nJira hatası: ${msg}`
+            : '',
+          fortifyText: input.includeFortify
+            ? `# Fortify Findings\n\nJira hatası: ${msg}`
+            : '',
+        };
+      }
+
+      return toAnalyzeResultFromPom(pom, mavenVersion, security);
     });
   }
 
@@ -395,31 +561,204 @@ export async function analyzeRepository(
   const workspacePath = getWorkspacePath(jobId, input.workspaceRoot);
 
   return timedStep(log, 'Analyze', async () => {
-  onLog?.(`Uzak repodan analiz klonu: ${cloneSource}`);
+    onLog?.(`Uzak repodan analiz klonu: ${cloneSource}`);
+
+    try {
+      await cloneRepositoryShallow(cloneSource, workspacePath, input.sourceBranch, onLog);
+
+      const pom = analyzePom(workspacePath);
+      const mavenVersion = await getMavenVersion(onLog);
+
+      onLog?.(`Java sürümü: ${pom.javaVersion} (${pom.javaSource})`);
+      onLog?.(`Maven: ${mavenVersion}`);
+      onLog?.(`Spring Boot parent: ${pom.springBootVersion}`);
+
+      let security: SecurityFindingsResult | null = null;
+      try {
+        security = await maybeFetchSecurityFindings(
+          {
+            sourceMode,
+            repoUrl: cloneSource,
+            localRepoPath: input.localRepoPath,
+            includeMend: input.includeMend,
+            includeFortify: input.includeFortify,
+            jiraBaseUrl: input.jiraBaseUrl,
+            jiraToken: input.jiraToken,
+          },
+          onLog
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        onLog?.(`Mend & Fortify Jira hatası: ${msg}`);
+        security = {
+          repoName: deriveRepoName({
+            sourceMode,
+            repoUrl: cloneSource,
+            localRepoPath: input.localRepoPath,
+          }),
+          mend: [],
+          fortify: [],
+          mendJql: null,
+          fortifyJql: null,
+          mendText: input.includeMend
+            ? `# Mend Findings\n\nJira hatası: ${msg}`
+            : '',
+          fortifyText: input.includeFortify
+            ? `# Fortify Findings\n\nJira hatası: ${msg}`
+            : '',
+        };
+      }
+
+      return toAnalyzeResultFromPom(pom, mavenVersion, security);
+    } finally {
+      await removeDirectorySafe(workspacePath);
+    }
+  });
+}
+
+export async function startSecurityRemediation(
+  input: StartUpgradeInput,
+  onLog?: LogCallback,
+  onStatus?: StatusCallback
+): Promise<JobRecord> {
+  await assertHealth(input.targetJavaVersion);
+
+  const includeMend = input.includeMend === true;
+  const includeFortify = input.includeFortify === true;
+  if (!includeMend && !includeFortify) {
+    throw new Error('Mend & Fortify Fix için en az bir checkbox seçili olmalı.');
+  }
+
+  const jobId = uuidv4();
+  const sourceMode: SourceMode = input.sourceMode === 'local' ? 'local' : 'remote';
+  const { cloneSource } = resolveCloneSource(input);
+  const workspacePath = resolveWorkspacePath(jobId, input, sourceMode, cloneSource);
+  const job = createJobRecord(jobId, input, sourceMode, cloneSource, workspacePath);
+
+  jobs.set(jobId, job);
+  activeJobId = jobId;
+  clearJobCancellation(jobId);
+  setStatus(job, 'cloning', onStatus);
+  const jobStart = Date.now();
 
   try {
-    await cloneRepositoryShallow(cloneSource, workspacePath, input.sourceBranch, onLog);
+    return await withJobContext(jobId, async () => {
+      await prepareJobWorkspace(job, input, onLog);
 
-    const pom = analyzePom(workspacePath);
-    const mavenVersion = await getMavenVersion(onLog);
+      const findings = await maybeFetchSecurityFindings(
+        {
+          sourceMode: job.sourceMode,
+          repoUrl: job.repoUrl || input.repoUrl,
+          localRepoPath: job.localRepoPath || input.localRepoPath,
+          includeMend,
+          includeFortify,
+          jiraBaseUrl: input.jiraBaseUrl,
+          jiraToken: input.jiraToken,
+        },
+        (line) => appendLog(job, line, onLog)
+      );
 
-    onLog?.(`Java sürümü: ${pom.javaVersion} (${pom.javaSource})`);
-    onLog?.(`Maven: ${mavenVersion}`);
-    onLog?.(`Spring Boot parent: ${pom.springBootVersion}`);
+      if (!findings) {
+        throw new Error('Güvenlik bulguları alınamadı.');
+      }
 
-    return {
-      javaVersion: pom.javaVersion,
-      javaSource: pom.javaSource,
-      mavenVersion,
-      mavenCompilerVersion: pom.mavenCompilerVersion,
-      springBootVersion: pom.springBootVersion,
-      buildTool: pom.buildTool,
-      displayVersion: pom.javaVersion === 'unknown' ? '?' : `Java ${pom.javaVersion}`,
-    };
+      writeSecurityFindingArtifacts(job.workspacePath, findings);
+      job.mendFindingsText = findings.mendText;
+      job.fortifyFindingsText = findings.fortifyText;
+
+      const inScopeCount =
+        (includeMend ? findings.mend.length : 0) +
+        (includeFortify ? findings.fortify.length : 0);
+
+      if (inScopeCount === 0) {
+        appendLog(
+          job,
+          'Seçili tarayıcılar için açık Jira bulgusu yok — Copilot fix atlandı.',
+          onLog
+        );
+        job.report = [
+          '# Security Remediation Report',
+          '',
+          `Repository: ${findings.repoName}`,
+          `Branch: ${job.upgradeBranch || job.sourceBranch}`,
+          '',
+          'No in-scope open findings were returned from Jira.',
+        ].join('\n');
+        ensureMigrationOutputDir(job.workspacePath);
+        fs.writeFileSync(
+          resolveMigrationFilePath(job.workspacePath, MIGRATION_FILE_NAMES.securityReport),
+          job.report,
+          'utf-8'
+        );
+        await syncJobArtifacts(job);
+        setStatus(job, 'completed', onStatus);
+        logElapsed((l) => appendLog(job, l, onLog), 'Mend & Fortify Fix (toplam)', jobStart);
+        return job;
+      }
+
+      const prompt = buildSecurityRemediationPrompt({
+        repoName: findings.repoName,
+        branch: job.upgradeBranch || job.sourceBranch,
+        includeMend,
+        includeFortify,
+        mendFindings: includeMend ? findings.mend : [],
+        fortifyFindings: includeFortify ? findings.fortify : [],
+      });
+
+      setStatus(job, 'running-copilot', onStatus);
+      appendLog(
+        job,
+        `Mend & Fortify Fix: ${inScopeCount} bulgu için Copilot remediation başlıyor...`,
+        onLog
+      );
+
+      const code = await runCopilotFix(
+        job.workspacePath,
+        prompt,
+        (line) => appendLog(job, line, onLog),
+        job.copilotModel,
+        'security fix prompt',
+        'security-fix'
+      );
+
+      assertJobNotCancelled(job.id);
+      if (code !== 0) {
+        appendLog(job, `UYARI: Copilot security fix exit code ${code}`, onLog);
+      }
+
+      const securityReport = readSecurityRemediationReport(job.workspacePath);
+      if (securityReport.trim()) {
+        job.report = securityReport;
+      } else {
+        job.report = readReport(job.workspacePath) || job.report;
+      }
+
+      await syncJobArtifacts(job);
+      if (securityReport.trim()) {
+        job.report = securityReport;
+      }
+
+      setStatus(job, 'completed', onStatus);
+      appendLog(job, 'Mend & Fortify Fix tamamlandı.', onLog);
+      logElapsed((l) => appendLog(job, l, onLog), 'Mend & Fortify Fix (toplam)', jobStart);
+      return job;
+    });
+  } catch (err) {
+    try {
+      await syncJobArtifacts(job);
+    } catch {
+      // ignore
+    }
+    const failedJob = handleJobFailure(job, err, onLog, onStatus);
+    if (err instanceof JobCancelledError) {
+      return failedJob;
+    }
+    throw err;
   } finally {
-    await removeDirectorySafe(workspacePath);
+    if (activeJobId === jobId) {
+      activeJobId = null;
+    }
   }
-  });
 }
 
 export async function startUpgrade(

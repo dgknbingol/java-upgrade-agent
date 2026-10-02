@@ -9,6 +9,7 @@ import { OutputTabs } from '../components/OutputTabs';
 import { BranchSection } from '../components/BranchSection';
 import { PipelineSettingsSection } from '../components/PipelineSettingsSection';
 import { LocalPropertiesSection } from '../components/LocalPropertiesSection';
+import { MendFortifySection } from '../components/MendFortifySection';
 import type { PipelineSettingsInput } from '../types/electron';
 import { RepositoryForm } from '../components/RepositoryForm';
 import { WorkspaceSection } from '../components/WorkspaceSection';
@@ -17,8 +18,20 @@ import { useHealth } from '../hooks/useHealth';
 import { useJob, type JobRunInput } from '../hooks/useJob';
 import { DEFAULT_TARGET_JAVA } from '../constants/javaVersions';
 
+function isJobRunningLike(status: string): boolean {
+  return [
+    'cloning',
+    'running-copilot',
+    'building',
+    'smoke-running',
+    'pushing',
+    'rolling-back',
+  ].includes(status);
+}
+
 export function MainPage() {
-  const { config: appConfig, savePipelineSettings, saveCopilotModel } = useAppConfig();
+  const { config: appConfig, savePipelineSettings, saveCopilotModel, saveJiraSettings } =
+    useAppConfig();
   const {
     logs,
     status,
@@ -26,9 +39,12 @@ export function MainPage() {
     upgradeBranch,
     report,
     diff,
+    mendFindings,
+    fortifyFindings,
     error: jobError,
     loading: jobLoading,
     analyze,
+    startSecurityFix,
     startUpgrade,
     stopJob,
     runBuild,
@@ -58,6 +74,10 @@ export function MainPage() {
   const [workBranchName, setWorkBranchName] = useState('');
   const [useLocalPropertiesOverride, setUseLocalPropertiesOverride] = useState(false);
   const [localPropertiesFilePath, setLocalPropertiesFilePath] = useState('');
+  const [includeMend, setIncludeMend] = useState(false);
+  const [includeFortify, setIncludeFortify] = useState(false);
+  const [jiraBaseUrl, setJiraBaseUrl] = useState('https://itjira.vodafone.local');
+  const [jiraToken, setJiraToken] = useState('');
   const [pipelineSettings, setPipelineSettings] = useState<PipelineSettingsInput>({
     maxMigrationRounds: 3,
     maxBuildFixAttempts: 2,
@@ -104,6 +124,13 @@ export function MainPage() {
   }, [appConfig.copilotModel]);
 
   useEffect(() => {
+    if (appConfig.jiraBaseUrl) {
+      setJiraBaseUrl(appConfig.jiraBaseUrl);
+    }
+    setJiraToken(appConfig.jiraToken || '');
+  }, [appConfig.jiraBaseUrl, appConfig.jiraToken]);
+
+  useEffect(() => {
     setAnalyzed(false);
     setAnalyzeResult(null);
     setSourceJavaVersion('');
@@ -114,14 +141,11 @@ export function MainPage() {
     sourceMode === 'remote' ? Boolean(repoUrl.trim()) : Boolean(localRepoPath.trim());
   const canAnalyze = Boolean(hasSource && sourceBranch.trim() && allReady);
   const canStart = canAnalyze && analyzed;
-  const isJobRunning = [
-    'cloning',
-    'running-copilot',
-    'building',
-    'smoke-running',
-    'pushing',
-    'rolling-back',
-  ].includes(status);
+  const isJobRunning = isJobRunningLike(status);
+  const hasSecurityScope = includeMend || includeFortify;
+  const canSecurityFix = Boolean(
+    canAnalyze && hasSecurityScope && jiraToken.trim() && !isJobRunning
+  );
   const jobActionable = ['completed', 'failed', 'cancelled', 'idle'].includes(status);
   const canStop = Boolean(isJobRunning && (jobId || jobLoading));
   const canBuild = Boolean((canStart || (jobId && jobActionable)) && !isJobRunning);
@@ -142,6 +166,10 @@ export function MainPage() {
         sourceBranch: sourceBranch.trim(),
         workspaceRoot: workspaceRoot.trim() || undefined,
         targetJavaVersion: targetJavaVersion.trim(),
+        includeMend,
+        includeFortify,
+        jiraBaseUrl: jiraBaseUrl.trim() || undefined,
+        jiraToken: jiraToken.trim() || undefined,
       });
       setAnalyzeResult({
         displayVersion: result.displayVersion,
@@ -181,6 +209,10 @@ export function MainPage() {
       localPropertiesFilePath: useLocalPropertiesOverride
         ? localPropertiesFilePath.trim() || undefined
         : undefined,
+      includeMend,
+      includeFortify,
+      jiraBaseUrl: jiraBaseUrl.trim() || undefined,
+      jiraToken: jiraToken.trim() || undefined,
     };
   }
 
@@ -189,6 +221,14 @@ export function MainPage() {
       ...buildJobInput(),
       skipTests,
     };
+  }
+
+  async function handleSecurityFix() {
+    try {
+      await startSecurityFix(buildJobInput());
+    } catch {
+      // error state handled in hook
+    }
   }
 
   async function handleStart() {
@@ -300,6 +340,19 @@ export function MainPage() {
               onWorkBranchNameChange={setWorkBranchName}
             />
 
+            <MendFortifySection
+              includeMend={includeMend}
+              includeFortify={includeFortify}
+              jiraBaseUrl={jiraBaseUrl}
+              jiraToken={jiraToken}
+              disabled={isJobRunning}
+              onIncludeMendChange={setIncludeMend}
+              onIncludeFortifyChange={setIncludeFortify}
+              onJiraBaseUrlChange={setJiraBaseUrl}
+              onJiraTokenChange={setJiraToken}
+              onSave={saveJiraSettings}
+            />
+
             <LocalPropertiesSection
               useLocalPropertiesOverride={useLocalPropertiesOverride}
               localPropertiesFilePath={localPropertiesFilePath}
@@ -329,6 +382,7 @@ export function MainPage() {
             <ActionButtons
               loading={loading}
               canAnalyze={canAnalyze}
+              canSecurityFix={canSecurityFix}
               canStart={canStart}
               canStop={canStop}
               canBuild={canBuild}
@@ -336,6 +390,7 @@ export function MainPage() {
               canPush={canPush}
               canRollback={canRollback}
               onAnalyze={handleAnalyze}
+              onSecurityFix={handleSecurityFix}
               onStart={handleStart}
               onStop={stopJob}
               onRunBuild={handleRunBuild}
@@ -374,6 +429,8 @@ export function MainPage() {
               report={report}
               diff={diff}
               logs={logs}
+              mendFindings={mendFindings}
+              fortifyFindings={fortifyFindings}
               status={status}
               upgradeBranch={upgradeBranch}
               onExpandChange={setOutputExpanded}
